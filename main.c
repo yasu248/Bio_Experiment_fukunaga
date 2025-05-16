@@ -6,6 +6,7 @@
 #define BUFSIZE 1024 //ファイルから読み込む一行の最大文字数
 #define MAX_SEQ_NUM 30 //一つの転写因子に対して与えられる結合部位配列の最大数
 #define MAX_GENE_NUM 8 //与えられるプロモータ領域の最大遺伝子数
+#define THRESHOLD 2.5 //閾値
 
 char g_motif[MAX_SEQ_NUM][BUFSIZE]; //転写因子の結合部位配列を保存する配列
 int g_cols = 0; //転写因子の列数を保存する変数
@@ -151,12 +152,18 @@ double background_prob_C = 4637676 / total_bases;
 double background_prob_G = 4637676 / total_bases;
 double background_prob_T = 7519429 / total_bases;
 
+/*
 // バックグラウンド出現確率の出力
 printf("\nバックグラウンド出現確率:\n");
 printf("A: %.4f\n", background_prob_A);
 printf("C: %.4f\n", background_prob_C);
 printf("G: %.4f\n", background_prob_G);
 printf("T: %.4f\n", background_prob_T);
+*/
+
+//////////////////////////////////////////////////////////////////////
+//オッズスコアの計算
+//////////////////////////////////////////////////////////////////////
 
     for(int j = 0; j < g_cols; j++){
         double total_freq = freq_table[0][j] + freq_table[1][j] + freq_table[2][j] + freq_table[3][j] + 4;
@@ -174,28 +181,59 @@ printf("T: %.4f\n", background_prob_T);
         printf("\n");
     }
 
-// 最大スコアで出力
-for (int gene = 0; gene < gene_num; gene++) {
-    double max_score = -INFINITY;
-    int max_pos = -1;
-    char max_seq[BUFSIZE] = {0};
+    for (int gene = 0; gene < gene_num; gene++) {
+        typedef struct {
+            double score;
+            int pos;
+            char seq[BUFSIZE];
+        } ScoreData;
+        
+        ScoreData maxScore = {-INFINITY, -1, ""};
+        ScoreData aboveThreshold[BUFSIZE]; // スコアが3以上のものを保存する配列
+        int count = 0; // スコアが3以上のものの数
 
-    int seq_len = strlen(g_pro[gene].seq);
-    for (int i = 0; i <= seq_len - g_cols; i++) {
-        double score = hit(g_pro[gene].seq, i);
-        if (score > max_score) {
-            max_score = score;
-            max_pos = i;
-            strncpy(max_seq, g_pro[gene].seq + i, g_cols);
-            max_seq[g_cols] = '\0';
+        int seq_len = strlen(g_pro[gene].seq);
+        for (int i = 0; i <= seq_len - g_cols; i++) {
+            double score = hit(g_pro[gene].seq, i);
+            
+            // 最大スコアを更新
+            if (score > maxScore.score) {
+                maxScore.score = score;
+                maxScore.pos = i;
+                strncpy(maxScore.seq, g_pro[gene].seq + i, g_cols);
+                maxScore.seq[g_cols] = '\0';
+            }
+            
+            // スコアが閾値以上なら保存
+            if (score >= THRESHOLD) {
+                aboveThreshold[count].score = score;
+                aboveThreshold[count].pos = i;
+                strncpy(aboveThreshold[count].seq, g_pro[gene].seq + i, g_cols);
+                aboveThreshold[count].seq[g_cols] = '\0';
+                count++;
+            }
         }
+
+        printf("pro:%s\n", g_pro[gene].name);
+        // スコアが閾値以上のものがある場合
+        if (count > 0) { 
+            printf("閾値%.1f以上の結合部位:\n", THRESHOLD);
+            for (int i = 0; i < count; i++) {
+                printf("pos:%d hit(%s)= %.2f\n", 
+                    aboveThreshold[i].pos, 
+                    aboveThreshold[i].seq, 
+                    aboveThreshold[i].score);
+            }
+        // スコアが閾値以上のものがない場合
+        } else { 
+            printf("閾値以上がないため、最大スコア:\n");
+            printf("pos:%d hit(%s)= %.2f\n", 
+                maxScore.pos, 
+                maxScore.seq, 
+                maxScore.score);
+        }
+        printf("\n");
     }
-
-    printf("pro:%s\n", g_pro[gene].name);
-    printf("pos:%d\n", max_pos);
-    printf("hit(%s)= %.2f\n\n", max_seq, max_score);
-}
-
     return 0;
 }
 
